@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Private 2-Way Encrypted Chat</title>
+
+<!-- Libraritë Firebase -->
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+<style>
+body { font-family: Arial; max-width: 800px; margin: auto; padding: 20px; background: #f5f5f5; }
+textarea, input, button { width: 100%; padding: 10px; margin-top: 6px; font-size: 16px; box-sizing: border-box; }
+textarea { height: 110px; resize: none; }
+label { font-weight: bold; margin-top: 15px; display: block; }
+#chat { display: none; }
+#error { color: red; margin-top: 5px; }
+</style>
+</head>
+<body>
+
+<h2>Private 2-Way Encrypted Chat</h2>
+
+<div id="login">
+    <p>Vendos password për të hyrë:</p>
+    <input type="password" id="password" placeholder="Password">
+    <button id="loginBtn">Hyr</button>
+    <p id="error"></p>
+</div>
+
+<div id="chat">
+    <label>Text1 (Ti shkruan normal):</label>
+    <textarea id="text1"></textarea>
+
+    <label>Text2 (Mesazh i enkriptuar – shiko live te shoku):</label>
+    <textarea id="text2" readonly></textarea>
+
+    <label>Text3 (Shoku shkruan këtu):</label>
+    <textarea id="text3"></textarea>
+
+    <label>Text4 (Dekryptim i mesazhit të shokut):</label>
+    <textarea id="text4" readonly></textarea>
+</div>
+
+<script>
+const CORRECT_PASSWORD = "1234";
+let KEY = "";
+
+// Vendos config Firebase (zëvendëso me config tënd të vërtetë)
+var firebaseConfig = {
+  apiKey: "APIKEY_HERE",
+  authDomain: "PROJECTID.firebaseapp.com",
+  databaseURL: "https://PROJECTID-default-rtdb.firebaseio.com",
+  projectId: "PROJECTID",
+  storageBucket: "PROJECTID.appspot.com",
+  messagingSenderId: "SENDERID",
+  appId: "APPID"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// Funksion XOR për enkriptim/dekriptim
+function xorCrypt(text, key) {
+    let result = "";
+    for (let i = 0; i < text.length; i++) {
+        result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    }
+    return result;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const loginBtn = document.getElementById("loginBtn");
+    const text1 = document.getElementById("text1");
+    const text2 = document.getElementById("text2");
+    const text3 = document.getElementById("text3");
+    const text4 = document.getElementById("text4");
+    const errorMsg = document.getElementById("error");
+
+    loginBtn.addEventListener("click", () => {
+        const pass = document.getElementById("password").value;
+        if (pass === CORRECT_PASSWORD) {
+            KEY = pass;
+            document.getElementById("login").style.display = "none";
+            document.getElementById("chat").style.display = "block";
+
+            const ROOM = KEY; // password si dhoma
+
+            // Ti shkruan mesazh → ruaj në Firebase dhe shfaq live në Text2
+            text1.addEventListener("input", () => {
+                const enc = btoa(xorCrypt(text1.value, KEY));
+                db.ref("rooms/" + ROOM + "/fromYou").set(enc); // Ruaj mesazhin në Firebase
+            });
+
+            // Merr mesazhet live nga ti dhe shfaq ne Text2
+            db.ref("rooms/" + ROOM + "/fromYou").on("value", snap => {
+                if (snap.val()) {
+                    text2.value = snap.val(); // Shfaq mesazhin e enkriptuar live
+                }
+            });
+
+            // Shoku shkruan → ruaj në Firebase dhe shfaq live në Text4
+            text3.addEventListener("input", () => {
+                const enc = btoa(xorCrypt(text3.value, KEY));
+                db.ref("rooms/" + ROOM + "/fromFriend").set(enc); // Ruaj mesazhin e enkriptuar të shokut në Firebase
+            });
+
+            // Merr mesazhet live nga shoku dhe dekriptoje për ta shfaqur në Text4
+            db.ref("rooms/" + ROOM + "/fromFriend").on("value", snap => {
+                if (snap.val()) {
+                    try {
+                        const decryptedMessage = xorCrypt(atob(snap.val()), KEY); // Dekrypto dhe shfaq
+                        text4.value = decryptedMessage;
+                    } catch {
+                        text4.value = "Mesazh i pavlefshëm";
+                    }
+                }
+            });
+
+            // ** Shto logjikën për dekriptimin kur shoku ngjit mesazh nga Text2 tek Text3 **
+            text3.addEventListener("input", () => {
+                try {
+                    // Nëse është tekst i enkriptuar, dekriptoje dhe shfaq në Text4
+                    const decryptedMessage = xorCrypt(atob(text3.value), KEY);
+                    text4.value = decryptedMessage;
+                } catch (error) {
+                    text4.value = "Mesazh i pavlefshëm";
+                }
+            });
+
+        } else {
+            errorMsg.innerText = "Password gabim!";
+        }
+    });
+});
+</script>
+
+</body>
+</html>
